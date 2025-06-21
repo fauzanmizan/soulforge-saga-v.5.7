@@ -135,14 +135,18 @@ const App = {
     },
 
     async init() {
-        this.definePageTemplates();
         UIManager.showLoading("Menghubungi Tenunan Kosmik...");
         await this.loadDB();
-        UIManager.hideLoading();
         
         const currentPage = document.body.dataset.page;
         this.checkSession(currentPage);
+        
+        // PENTING: Pindahkan pemanggilan definePageTemplates setelah this.checkSession()
+        // Ini memastikan this.currentUser sudah diatur sebelum template dibangun
+        this.definePageTemplates(); 
 
+        UIManager.hideLoading();
+        
         switch (currentPage) {
             case 'login': this.initLoginPage(); break;
             case 'wanderer': this.initWandererPage(); break;
@@ -437,6 +441,7 @@ const App = {
     },
     
     getWandererCharacterHtml() {
+        // Baris ini sekarang aman karena definePageTemplates dipanggil setelah currentUser diatur
         return `
             <div id="character-page-content" class="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 <div class="lg:col-span-2 space-y-8">
