@@ -136,21 +136,45 @@ const App = {
 
     async init() {
         UIManager.showLoading("Menghubungi Tenunan Kosmik...");
-        await this.loadDB();
-        
-        const currentPage = document.body.dataset.page;
-        this.checkSession(currentPage);
-        
-        // PENTING: Pindahkan pemanggilan definePageTemplates setelah this.checkSession()
-        // Ini memastikan this.currentUser sudah diatur sebelum template dibangun
-        this.definePageTemplates(); 
+        await this.loadDB(); // Memuat data DB terlebih dahulu
 
+        const currentPage = document.body.dataset.page;
+        this.checkSession(currentPage); // Memeriksa sesi pengguna dan mengatur currentUser jika ada
+
+        // Pindahkan inisialisasi berdasarkan halaman dan currentUser
+        // definePageTemplates akan dipanggil di initWandererPage jika currentUser adalah wanderer
+        // dan di initForgerPage jika currentUser adalah forger
+        
         UIManager.hideLoading();
         
         switch (currentPage) {
-            case 'login': this.initLoginPage(); break;
-            case 'wanderer': this.initWandererPage(); break;
-            case 'forger': this.initForgerPage(); break;
+            case 'login': 
+                this.initLoginPage(); 
+                break;
+            case 'wanderer': 
+                // Pastikan currentUser valid dan sesuai peran sebelum melanjutkan
+                if (this.currentUser && this.currentUser.role === 'wanderer') {
+                    this.definePageTemplates(); // Definisi template setelah currentUser ada
+                    this.initWandererPage(); 
+                } else {
+                    // Jika sesi tidak valid atau role tidak cocok, arahkan ke login
+                    this.logout(); 
+                }
+                break;
+            case 'forger': 
+                // Pastikan currentUser valid dan sesuai peran sebelum melanjutkan
+                if (this.currentUser && this.currentUser.role === 'forger') {
+                    this.definePageTemplates(); // Definisi template setelah currentUser ada
+                    this.initForgerPage(); 
+                } else {
+                    // Jika sesi tidak valid atau role tidak cocok, arahkan ke login
+                    this.logout(); 
+                }
+                break;
+            default:
+                // Handle case for an unknown page or error state, redirect to login
+                this.logout(); 
+                break;
         }
     },
 
@@ -159,15 +183,19 @@ const App = {
         if (sessionUser) {
             try {
                 this.currentUser = JSON.parse(sessionUser);
+                // Jika sudah login dan berada di halaman login, redirect ke halaman peran yang sesuai
                 if (currentPage === 'login') {
                     const redirectUrl = this.currentUser.role === 'forger' ? 'forger.html' : 'wanderer.html';
                     window.location.href = redirectUrl;
                 }
             } catch(e) {
+                // Jika data sesi rusak, hapus dan paksa login
+                console.error("Error parsing session user:", e);
                 sessionStorage.removeItem('soulforgeUser');
                 if (currentPage !== 'login') window.location.href = 'index.html';
             }
         } else {
+            // Jika tidak ada sesi, dan tidak di halaman login, arahkan ke halaman login
             if (currentPage !== 'login') {
                 window.location.href = 'index.html';
             }
@@ -195,6 +223,7 @@ const App = {
 
     async saveDB(showLoading = true) {
         if (showLoading) UIManager.showLoading("Menyimpan takdir ke awan...");
+        // Hanya simpan currentUser jika dia adalah wanderer
         if (this.currentUser && this.currentUser.role === 'wanderer') {
             this.db.wanderers[this.currentUser.name] = this.currentUser;
         }
@@ -333,7 +362,7 @@ const App = {
             ledger: { transactions: [] }
         };
         await this.saveDB(false);
-        this.loginAsForger();
+        this.loginAsWanderer(name); // Login sebagai wanderer baru setelah dibuat
     },
 
     loginAsForger() {
@@ -358,6 +387,7 @@ const App = {
 
     // --- Inisialisasi Halaman Wanderer ---
     initWandererPage() {
+        // Cek lagi untuk keamanan, meskipun init() sudah seharusnya memfilter
         if (!this.currentUser || this.currentUser.role !== 'wanderer') {
             this.logout();
             return;
@@ -368,10 +398,11 @@ const App = {
         
         this.renderWandererNav();
         this.setupWandererNavEvents();
-        this.renderWandererPage('character');
+        this.renderWandererPage('character'); // Default ke halaman karakter
         this.startDestinyClock();
         
-        setInterval(() => this.triggerEncounter(), 30000);
+        // Interval encounter tetap dikomentari untuk saat ini, aktifkan jika logika sudah ada
+        // setInterval(() => this.triggerEncounter(), 30000);
     },
     
     renderWandererNav() {
@@ -403,13 +434,18 @@ const App = {
                 link.classList.add('active');
             });
         });
-        document.querySelector('.wanderer-nav-link').classList.add('active');
+        // Pastikan link "Character" aktif secara default saat pertama kali dimuat
+        document.querySelector('.wanderer-nav-link[data-page="character"]').classList.add('active');
     },
 
     renderWandererPage(pageId) {
         const pageContainer = document.getElementById('wanderer-page-container');
         const headerTitle = document.querySelector('#wanderer-header-title h2');
-        let contentHtml = this.pageTemplates[pageId] || this.pageTemplates['character'];
+        let contentHtml = this.pageTemplates[pageId] || this.pageTemplates['character']; // Fallback ke karakter
+
+        // Pastikan chart.js library dimuat jika akan merender chart.
+        // Untuk saat ini, kita mengandalkan chart.js yang diimpor di HTML.
+
         let title = pageId.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase());
         
         headerTitle.textContent = title;
@@ -423,25 +459,26 @@ const App = {
             this.renderPlayerStatus();
             this.renderWandererScales();
             this.renderWandererAltar();
-            this.renderWandererRadarChart();
-            this.renderWandererMandate();
-            this.renderAttributeXpBars();
+            this.renderWandererRadarChart(); // Akan ditambahkan implementasinya
+            // this.renderWandererMandate(); // Akan dirender sebagai bagian dari komponen detail wanderer
+            this.renderAttributeXpBars(); // Akan ditambahkan implementasinya
         } else if (pageId === 'quest_log') {
-            this.renderActiveQuestsLog();
-            this.renderChronicle();
-            this.setupQuestLogTabs();
+            this.renderActiveQuestsLog(); // Akan ditambahkan implementasinya
+            this.renderChronicle(); // Akan ditambahkan implementasinya
+            this.setupQuestLogTabs(); // Akan ditambahkan implementasinya
         } else if (pageId === 'sanctuary') {
-            this.renderSanctuary();
+            this.renderSanctuary(); // Akan ditambahkan implementasinya
         } else if (pageId === 'world_map') {
-            this.renderWorldMap();
+            this.renderWorldMap(); // Akan ditambahkan implementasinya
         } else if (pageId === 'skill_tree') {
-            this.renderSkillTree();
+            this.renderSkillTree(); // Akan ditambahkan implementasinya
         }
         feather.replace();
     },
     
     getWandererCharacterHtml() {
         // Baris ini sekarang aman karena definePageTemplates dipanggil setelah currentUser diatur
+        // Tambahkan div untuk Mandate di sini jika ingin menampilkannya di halaman Character
         return `
             <div id="character-page-content" class="grid grid-cols-1 lg:grid-cols-5 gap-8">
                 <div class="lg:col-span-2 space-y-8">
@@ -474,6 +511,9 @@ const App = {
                         <h3 class="text-xl font-serif font-bold text-white mb-4 tracking-wider">Soul's Muscle Memory</h3>
                         <div id="attributes-xp-list" class="space-y-4"></div>
                     </div>
+                    <div id="wanderer-mandate-container" class="bg-card-bg p-6 rounded-2xl shadow-2xl border border-border-color">
+                        <h3 class="text-xl font-serif font-bold text-white mb-4 tracking-wider">Divine Mandate</h3>
+                        </div>
                 </div>
             </div>`;
     },
@@ -499,15 +539,23 @@ const App = {
                     <div class="scales-pan" id="pan-intention"><i data-feather="sun" class="h-4 w-4 text-indigo-300"></i></div>
                 </div>
             </div>`;
+        feather.replace(); // Pastikan ikon feather dirender
     },
     
     renderWandererAltar() {
         const container = document.getElementById('wanderer-altar-container');
         if (!container) return;
+        // Logic to determine if orb is within window for dynamic activation
+        const now = new Date();
+        const currentHour = now.getHours();
+
         container.innerHTML = this.currentUser.dailyRitual.orbs.map(orb => {
-            const isWithinWindow = true; // For demo
-            const isDisabled = orb.ignited || !isWithinWindow;
-            return `<div class="orb ${orb.ignited ? 'ignited' : ''} ${isDisabled ? 'disabled' : ''} ${isWithinWindow && !orb.ignited ? 'active-window' : ''}" data-orb-id="${orb.id}">
+            // Periksa apakah orb berada dalam jendela waktu yang aktif DAN belum dinyalakan
+            const isWithinWindow = currentHour >= orb.window[0] && currentHour < orb.window[1];
+            const isDisabled = orb.ignited || !isWithinWindow; // Orb disabled jika sudah ignited atau di luar window
+            const isActiveWindow = isWithinWindow && !orb.ignited; // Orb aktif jika dalam window dan belum ignited
+
+            return `<div class="orb ${orb.ignited ? 'ignited' : ''} ${isDisabled ? 'disabled' : ''} ${isActiveWindow ? 'active-window' : ''}" data-orb-id="${orb.id}">
                         <i data-feather="${orb.icon}" class="h-6 w-6 ${orb.ignited ? 'text-yellow-700' : 'text-slate-500'}"></i>
                     </div>`;
         }).join('');
@@ -515,6 +563,7 @@ const App = {
         container.querySelectorAll('.orb:not(.disabled)').forEach(orbEl => {
             orbEl.onclick = () => this.showRiteOfReckoning(orbEl.dataset.orbId);
         });
+        feather.replace(); // Pastikan ikon feather dirender
     },
 
     showRiteOfReckoning(orbId) {
@@ -530,7 +579,7 @@ const App = {
 
         UIManager.showModal('The Rite of Reckoning', rite.prompt, rite.choices.map(choice => ({
             text: choice.text,
-            consequence: () => {
+            consequence: async () => { // Gunakan async karena ada saveDB
                 this.currentUser.alignment.echo += choice.echo;
                 this.currentUser.alignment.intention += choice.intention;
                 
@@ -538,10 +587,11 @@ const App = {
                 if(orb) orb.ignited = true;
 
                 if(choice.organicXp) {
-                    this.gainAttributeXp(choice.organicXp.attr, choice.organicXp.amount);
+                    await this.gainAttributeXp(choice.organicXp.attr, choice.organicXp.amount);
                 }
-                this.renderAllWandererComponents();
-                this.saveDB(false);
+                // Simpan perubahan ke DB dan render ulang komponen
+                await this.saveDB(false);
+                this.renderAllWandererComponents('character'); // Render kembali halaman karakter
             }
         })));
     },
@@ -566,29 +616,36 @@ const App = {
         }
         UIManager.render(container, html);
         if (document.getElementById('mandate-checkbox')) {
-            document.getElementById('mandate-checkbox').onchange = (e) => {
-                if(e.target.checked) this.completeWandererMandate();
+            document.getElementById('mandate-checkbox').onchange = async (e) => { // Gunakan async
+                if(e.target.checked) await this.completeWandererMandate();
             };
         }
+        feather.replace();
     },
 
     async completeWandererMandate() {
         const mandate = this.currentUser.divineMandate;
         if (!mandate || mandate.completed) return;
+        
         mandate.completed = true;
         this.currentUser.xp += mandate.xpReward;
+        
+        // Simpan perubahan ke DB
         await this.saveDB(true);
-        this.renderWandererMandate();
-        alert("Titah telah diselesaikan! Takdirmu bergeser.");
+        this.renderWandererMandate(); // Render ulang tampilan mandate
+        UIManager.showNotification(`Titah telah diselesaikan! Takdirmu bergeser. (+${mandate.xpReward} XP)`, 'check-circle', 'bg-gradient-to-r from-teal-400 to-cyan-400');
+        // Panggil juga renderAllWandererComponents untuk update XP di player status
+        this.renderAllWandererComponents('character'); 
     },
 
-    gainAttributeXp(attributeName, amount) {
+    async gainAttributeXp(attributeName, amount) {
         const attr = this.currentUser.attributes.find(a => a.name === attributeName);
         if (!attr) return;
         
         const focusBonus = this.currentUser.focus.attribute === attributeName ? 1.5 : 1;
         attr.xp += Math.floor(amount * focusBonus);
 
+        let leveledUp = false;
         if (attr.xp >= attr.xpToNext) {
             const oldLevel = attr.value;
             attr.value++;
@@ -596,8 +653,14 @@ const App = {
             attr.xpToNext = Math.floor(attr.xpToNext * 1.5);
             UIManager.showNotification(`Attribute Increased: ${attributeName} is now Level ${attr.value}!`, 'chevrons-up', 'bg-gradient-to-r from-emerald-400 to-green-400');
             this.checkForNewImprints(attributeName, attr.value);
+            leveledUp = true;
         }
-        this.renderAllWandererComponents();
+        await this.saveDB(false); // Simpan perubahan atribut secara otomatis
+        this.renderAttributeXpBars(); // Render ulang bar XP
+        if (this.wandererAttributeChart) { // Update radar chart jika sudah diinisialisasi
+            this.updateWandererRadarChart();
+        }
+        return leveledUp; // Mengembalikan boolean jika ada level up
     },
     
     checkForNewImprints(attributeName, newLevel) {
@@ -607,14 +670,112 @@ const App = {
             if (!this.currentUser.unlockedImprints.includes(imprint.id)) {
                 this.currentUser.unlockedImprints.push(imprint.id);
                 UIManager.showNotification(`Soul Imprint Unlocked: ${imprint.name}!`, 'star', 'bg-gradient-to-r from-indigo-500 to-purple-500');
-                this.saveDB(false);
+                // Tidak perlu saveDB di sini karena sudah dipanggil di gainAttributeXp
             }
         }
     },
 
+    // Implementasi renderWandererRadarChart
+    renderWandererRadarChart() {
+        const ctx = document.getElementById('wanderer-attribute-chart');
+        if (!ctx) return;
+
+        const attributes = this.currentUser.attributes;
+        const labels = attributes.map(attr => attr.name);
+        const data = attributes.map(attr => attr.value);
+
+        if (this.wandererAttributeChart) {
+            this.wandererAttributeChart.data.labels = labels;
+            this.wandererAttributeChart.data.datasets[0].data = data;
+            this.wandererAttributeChart.update();
+        } else {
+            this.wandererAttributeChart = new Chart(ctx, {
+                type: 'radar',
+                data: {
+                    labels: labels,
+                    datasets: [{
+                        label: 'Attribute Level',
+                        data: data,
+                        backgroundColor: 'rgba(129, 140, 248, 0.4)', // indigo-400
+                        borderColor: 'rgba(129, 140, 248, 1)',
+                        borderWidth: 2,
+                        pointBackgroundColor: 'rgba(129, 140, 248, 1)',
+                        pointBorderColor: '#fff',
+                        pointHoverBackgroundColor: '#fff',
+                        pointHoverBorderColor: 'rgba(129, 140, 248, 1)'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        r: {
+                            angleLines: { color: 'rgba(255, 255, 255, 0.2)' },
+                            grid: { color: 'rgba(255, 255, 255, 0.2)' },
+                            pointLabels: { color: 'rgb(243, 244, 246)', font: { size: 14, family: 'Cormorant Garamond' } },
+                            suggestedMin: 0,
+                            ticks: {
+                                display: false, // Sembunyikan label tick numerik
+                                stepSize: 1, // Pastikan tick untuk setiap level
+                                color: 'rgba(255, 255, 255, 0.7)'
+                            }
+                        }
+                    },
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return `${context.label}: Level ${context.raw}`;
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+    },
+
+    updateWandererRadarChart() {
+        if (this.wandererAttributeChart) {
+            const attributes = this.currentUser.attributes;
+            this.wandererAttributeChart.data.datasets[0].data = attributes.map(attr => attr.value);
+            this.wandererAttributeChart.update();
+        }
+    },
+
+    // Implementasi renderAttributeXpBars
+    renderAttributeXpBars() {
+        const container = document.getElementById('attributes-xp-list');
+        if (!container) return;
+
+        const html = this.currentUser.attributes.map(attr => `
+            <div class="attribute-xp-item">
+                <div class="flex justify-between items-center mb-1">
+                    <span class="text-slate-300 font-semibold">${attr.name} (Level ${attr.value})</span>
+                    <span class="text-slate-400 text-sm">${attr.xp} / ${attr.xpToNext} XP</span>
+                </div>
+                <div class="w-full bg-slate-700 rounded-full h-2.5">
+                    <div class="bg-brand-color h-2.5 rounded-full" style="width: ${(attr.xp / attr.xpToNext) * 100}%"></div>
+                </div>
+            </div>
+        `).join('');
+        UIManager.render(container, html);
+    },
+
+    // Implementasi triggerEncounter (Masih placeholder)
     triggerEncounter() {
         if (document.getElementById('overlay-container').innerHTML !== '') return;
-        // ... (Logic from previous step)
+        // Logic for triggering random encounters, maybe based on time or actions.
+        // Example:
+        // UIManager.showModal(
+        //     'A Whisper in the Void', 
+        //     'The air shimmers, and a cryptic voice echoes in your mind. What do you do?', 
+        //     [
+        //         { text: 'Embrace the unknown.', consequence: () => console.log('Embraced.') },
+        //         { text: 'Resist its influence.', consequence: () => console.log('Resisted.') }
+        //     ]
+        // );
     },
 
     startDestinyClock() {
@@ -629,25 +790,32 @@ const App = {
                 clearInterval(this.destinyClockInterval);
                 return;
             }
-            const years = Math.floor(distance / (1000 * 60 * 60 * 24 * 365));
-            const days = Math.floor((distance % (1000 * 60 * 60 * 24 * 365)) / (1000 * 60 * 60 * 24));
+            const years = Math.floor(distance / (1000 * 60 * 60 * 24 * 365.25)); // Use 365.25 for leap years
+            const days = Math.floor((distance % (1000 * 60 * 60 * 24 * 365.25)) / (1000 * 60 * 60 * 24));
             const hours = Math.floor((distance % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
             const minutes = Math.floor((distance % (1000 * 60 * 60)) / (1000 * 60));
+            const seconds = Math.floor((distance % (1000 * 60)) / 1000); // Tambahkan detik untuk akurasi
             clockElement.innerHTML = `
                 <div>${String(years).padStart(2, '0')}y : ${String(days).padStart(3, '0')}d</div>
-                <div class="text-lg">${String(hours).padStart(2, '0')}h : ${String(minutes).padStart(2, '0')}m</div>`;
+                <div class="text-lg">${String(hours).padStart(2, '0')}h : ${String(minutes).padStart(2, '0')}m : ${String(seconds).padStart(2, '0')}s</div>`;
         }, 1000);
     },
     
     exportSaga() {
-        if (!this.currentUser) return;
+        if (!this.currentUser) {
+            UIManager.showNotification('Tidak ada data jiwa yang bisa diekspor.', 'x-circle', 'bg-red-500');
+            return;
+        }
         const dataStr = JSON.stringify(this.currentUser, null, 2);
         const dataUri = 'data:application/json;charset=utf-8,'+ encodeURIComponent(dataStr);
-        const exportFileDefaultName = `soulforge_saga_${this.currentUser.name}.json`;
+        const exportFileDefaultName = `soulforge_saga_${this.currentUser.name.toLowerCase().replace(/\s/g, '_')}.json`;
         const linkElement = document.createElement('a');
         linkElement.setAttribute('href', dataUri);
         linkElement.setAttribute('download', exportFileDefaultName);
+        document.body.appendChild(linkElement); // Append to body is good practice
         linkElement.click();
+        document.body.removeChild(linkElement); // Clean up
+        UIManager.showNotification('Data Saga berhasil diekspor!', 'download-cloud', 'bg-gradient-to-r from-blue-400 to-purple-400');
     },
 
     importSaga(file) {
@@ -656,16 +824,23 @@ const App = {
         reader.onload = async (e) => {
             try {
                 const importedData = JSON.parse(e.target.result);
-                if (importedData.name && importedData.mantra && this.currentUser.name === importedData.name) {
-                    this.currentUser = importedData;
-                    await this.saveDB();
-                    alert('Data Saga berhasil dipulihkan! Halaman akan dimuat ulang.');
-                    window.location.reload();
+                // Validasi data impor lebih ketat
+                if (importedData && typeof importedData.name === 'string' && typeof importedData.mantra === 'string' && importedData.role === 'wanderer' && this.currentUser.name === importedData.name) {
+                    UIManager.showLoading('Memulihkan data Saga...');
+                    this.db.wanderers[importedData.name] = importedData; // Ganti data wanderer di db
+                    this.currentUser = importedData; // Update currentUser
+                    await this.saveDB(false); // Simpan perubahan ke Firestore
+                    UIManager.hideLoading();
+                    UIManager.showNotification('Data Saga berhasil dipulihkan! Halaman akan dimuat ulang.', 'upload-cloud', 'bg-gradient-to-r from-emerald-400 to-green-400');
+                    setTimeout(() => window.location.reload(), 1000); // Muat ulang setelah notifikasi
                 } else {
-                    alert('File cadangan tidak valid atau bukan milik jiwa ini.');
+                    UIManager.showError(document.getElementById('error-message'), 'File cadangan tidak valid atau bukan milik jiwa ini.');
+                    UIManager.showNotification('Gagal impor: File tidak valid atau bukan milik jiwa ini.', 'x-circle', 'bg-red-500');
                 }
             } catch (error) {
-                alert('Gagal membaca file. Pastikan file dalam format JSON yang benar.');
+                console.error("Error importing saga:", error);
+                UIManager.showError(document.getElementById('error-message'), 'Gagal membaca file. Pastikan file dalam format JSON yang benar.');
+                UIManager.showNotification('Gagal impor: File rusak atau format salah.', 'alert-triangle', 'bg-red-500');
             }
         };
         reader.readAsText(file);
@@ -730,8 +905,25 @@ const App = {
                 break;
             case 'wanderer_detail':
                 const wanderer = this.db.wanderers[wandererName];
+                if (!wanderer) { // Handle jika wanderer tidak ditemukan
+                    title = 'Wanderer Tidak Ditemukan';
+                    contentHtml = `<p class="text-slate-400">Jiwa ini tidak ada dalam catatan.</p>`;
+                    break;
+                }
                 title = `Kitab Jiwa: ${wanderer.name}`;
                 contentHtml = this.getWandererDetailHtml(wanderer);
+                break;
+            case 'world_forge':
+                title = 'Tempaan Dunia';
+                contentHtml = this.getWorldForgeHtml(); // Akan ditambahkan
+                break;
+            case 'revelations':
+                title = 'Perpustakaan Wahyu';
+                contentHtml = this.getRevelationsHtml(); // Akan ditambahkan
+                break;
+            case 'guardians':
+                title = 'Aula Para Penjaga';
+                contentHtml = this.getGuardiansHtml(); // Akan ditambahkan
                 break;
             default:
                 title = 'Tidak Ditemukan';
@@ -741,12 +933,22 @@ const App = {
         headerTitle.textContent = title;
         UIManager.render(pageContainer, contentHtml);
         
+        // Setup event listener spesifik halaman
         if (pageId === 'observatory') {
             this.renderWandererList();
         } else if (pageId === 'wanderer_detail') {
             document.getElementById('back-to-observatory').onclick = () => this.renderForgerPage({ pageId: 'observatory' });
             document.getElementById('forge-mandate-button').onclick = () => this.handleForgeMandate(wandererName);
+            // Render mandate di sini jika sudah ada
+            const currentMandate = this.db.wanderers[wandererName].divineMandate;
+            if (currentMandate) {
+                const currentMandateDisplay = document.getElementById('current-mandate-display');
+                if (currentMandateDisplay) {
+                    currentMandateDisplay.innerHTML = `${currentMandate.title}: ${currentMandate.description} (${currentMandate.completed ? 'Selesai' : 'Aktif'})`;
+                }
+            }
         }
+        feather.replace(); // Pastikan ikon feather dirender
     },
     
     getObservatoryHtml() {
@@ -826,10 +1028,21 @@ const App = {
                                     <h4 class="text-xl font-serif font-bold text-white tracking-wider mb-4">Statistik Jiwa</h4>
                                      <div class="bg-slate-800 p-4 rounded-lg space-y-2 text-sm">
                                         <div class="flex justify-between"><span class="text-slate-400">Total XP:</span><span class="font-mono text-white">${wanderer.xp}</span></div>
-                                        <div class="flex justify-between"><span class="text-slate-400">Streak:</span><span class="font-mono text-white">${wanderer.consistencyStreak} Hari</span></div>
+                                        <div class="flex justify-between"><span class="text-slate-400">Streak Konsistensi:</span><span class="font-mono text-white">${wanderer.consistencyStreak} Hari</span></div>
                                         <div class="flex justify-between"><span class="text-slate-400">Esensi Niat:</span><span class="font-mono text-white">${wanderer.essenceOfWill}</span></div>
                                     </div>
                                 </div>
+                            </div>
+                        </div>
+                        <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color">
+                            <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-6">Atribut Jiwa</h3>
+                            <div class="space-y-3">
+                                ${wanderer.attributes.map(attr => `
+                                    <div class="flex justify-between items-center">
+                                        <span class="text-slate-300">${attr.name}:</span>
+                                        <span class="font-mono text-white">Level ${attr.value} (XP: ${attr.xp}/${attr.xpToNext})</span>
+                                    </div>
+                                `).join('')}
                             </div>
                         </div>
                     </div>
@@ -838,7 +1051,7 @@ const App = {
                         <div class="mb-6">
                             <h4 class="text-lg font-semibold text-slate-300 mb-2">Titah Aktif</h4>
                             <div id="current-mandate-display" class="p-4 bg-slate-800 rounded-lg text-slate-400 italic">
-                                ${currentMandate ? `${currentMandate.title}: ${currentMandate.description}` : 'Tidak ada titah aktif.'}
+                                ${currentMandate ? `${currentMandate.title}: ${currentMandate.description} (${currentMandate.completed ? 'Selesai' : 'Aktif'})` : 'Tidak ada titah aktif.'}
                             </div>
                         </div>
                         <h4 class="text-lg font-semibold text-slate-300 mb-2 border-t border-border-color pt-6">Tempa Titah Baru</h4>
@@ -877,11 +1090,26 @@ const App = {
         const title = document.getElementById('mandate-title').value.trim();
         const description = document.getElementById('mandate-desc').value.trim();
         const attribute = document.getElementById('mandate-attr').value;
-        const xpReward = parseInt(document.getElementById('mandate-xp').value);
-        if (!title || !description || !attribute || isNaN(xpReward)) {
-            alert('Semua field harus diisi dengan benar.');
+        const xpInput = document.getElementById('mandate-xp');
+        const xpReward = parseInt(xpInput.value);
+
+        if (!title || !description || !attribute || isNaN(xpReward) || xpReward <= 0) {
+            UIManager.showNotification('Judul, Deskripsi, Atribut, dan Hadiah XP (positif) harus diisi.', 'alert-triangle', 'bg-red-500');
             return;
         }
+        
+        // Pastikan wanderer ada sebelum memodifikasi
+        if (!this.db.wanderers[wandererName]) {
+            UIManager.showNotification('Wanderer tidak ditemukan.', 'x-circle', 'bg-red-500');
+            return;
+        }
+
+        // Periksa apakah sudah ada mandate aktif
+        if (this.db.wanderers[wandererName].divineMandate && !this.db.wanderers[wandererName].divineMandate.completed) {
+            UIManager.showNotification('Wanderer ini sudah memiliki titah aktif. Selesaikan yang sebelumnya dulu.', 'info', 'bg-blue-500');
+            return;
+        }
+
         const newMandate = {
             id: `mandate_${Date.now()}`, title: title, description: description,
             attribute: attribute, xpReward: xpReward, completed: false,
@@ -889,11 +1117,204 @@ const App = {
         };
         this.db.wanderers[wandererName].divineMandate = newMandate;
         UIManager.showLoading("Menganugerahkan titah baru...");
+        
+        // Langsung update di Firestore path spesifik untuk wanderer ini
         const wandererRef = doc(firestoreDB, "saga_worlds", this.DB_DOC_ID);
         await updateDoc(wandererRef, { [`wanderers.${wandererName}.divineMandate`]: newMandate });
+        
         UIManager.hideLoading();
-        this.renderForgerPage({ pageId: 'wanderer_detail', wandererName: wandererName });
-        alert('Titah baru telah dianugerahkan!');
+        this.renderForgerPage({ pageId: 'wanderer_detail', wandererName: wandererName }); // Render ulang halaman detail
+        UIManager.showNotification('Titah baru telah dianugerahkan!', 'award', 'bg-gradient-to-r from-teal-400 to-emerald-400');
+        
+        // Reset form
+        document.getElementById('mandate-title').value = '';
+        document.getElementById('mandate-desc').value = '';
+        document.getElementById('mandate-xp').value = '100';
+    },
+
+    // Placeholder untuk halaman Forger lainnya
+    getWorldForgeHtml() {
+        return `
+            <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color text-center">
+                <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-4">Tempaan Dunia</h3>
+                <p class="text-slate-400">Di sinilah dunia itu sendiri dibentuk. Fitur akan datang!</p>
+                <i data-feather="tool" class="w-16 h-16 text-slate-600 mt-8"></i>
+            </div>
+        `;
+    },
+    getRevelationsHtml() {
+        return `
+            <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color text-center">
+                <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-4">Perpustakaan Wahyu</h3>
+                <p class="text-slate-400">Mengelola lore dan peristiwa yang terungkap. Fitur akan datang!</p>
+                <i data-feather="book-open" class="w-16 h-16 text-slate-600 mt-8"></i>
+            </div>
+        `;
+    },
+    getGuardiansHtml() {
+        return `
+            <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color text-center">
+                <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-4">Aula Para Penjaga</h3>
+                <p class="text-slate-400">Mengelola peran dan izin para Penjaga. Fitur akan datang!</p>
+                <i data-feather="shield" class="w-16 h-16 text-slate-600 mt-8"></i>
+            </div>
+        `;
+    },
+
+    // Implementasi placeholder untuk halaman Wanderer lainnya
+    renderActiveQuestsLog() {
+        const container = document.getElementById('active-quests-log-container');
+        if (container) {
+            container.innerHTML = `
+                <p class="text-slate-500 italic">Belum ada alur takdir yang aktif.</p>
+                <div class="p-4 bg-slate-800 rounded-lg">
+                    <h4 class="text-lg font-semibold text-white">Current Mandate:</h4>
+                    <p class="text-slate-400" id="quest-log-mandate-display">${this.currentUser.divineMandate ? `${this.currentUser.divineMandate.title}: ${this.currentUser.divineMandate.description} (${this.currentUser.divineMandate.completed ? 'Selesai' : 'Aktif'})` : 'Tidak ada titah aktif.'}</p>
+                </div>
+            `;
+        }
+    },
+    renderChronicle() {
+        const container = document.getElementById('chronicle-container');
+        if (container) {
+            if (this.currentUser.chronicle && this.currentUser.chronicle.length > 0) {
+                const sortedChronicle = [...this.currentUser.chronicle].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+                const html = sortedChronicle.map(entry => {
+                    const date = new Date(entry.timestamp).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                    const time = new Date(entry.timestamp).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
+                    return `
+                        <div class="chronicle-entry relative pl-10 pb-12">
+                            <div class="absolute -left-2 top-0 w-4 h-4 bg-indigo-600 rounded-full border-2 border-border-color"></div>
+                            <div class="absolute -left-2 top-0 transform -translate-x-1/2 -translate-y-1/2">
+                                ${entry.sigil ? `<i data-feather="${entry.sigil}" class="w-6 h-6 text-indigo-300"></i>` : ''}
+                            </div>
+                            <h4 class="text-xl font-serif font-bold text-white">${entry.title}</h4>
+                            <p class="text-slate-400 text-sm mt-1">${date} ${time}</p>
+                            <p class="text-slate-300 mt-2">${entry.reflection}</p>
+                            ${entry.spoil ? `<p class="text-slate-500 italic mt-1">Spoiler: ${entry.spoil}</p>` : ''}
+                        </div>
+                    `;
+                }).join('');
+                container.innerHTML = html;
+            } else {
+                container.innerHTML = `<p class="text-center text-slate-500 italic">Kisah Anda belum terukir.</p>`;
+            }
+        }
+        feather.replace();
+    },
+    setupQuestLogTabs() {
+        const tabsContainer = document.getElementById('quest-log-tabs');
+        if (!tabsContainer) return;
+
+        tabsContainer.querySelectorAll('.quest-tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                tabsContainer.querySelectorAll('.quest-tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+
+                document.querySelectorAll('.quest-content').forEach(content => {
+                    content.style.display = 'none';
+                });
+                document.getElementById(tab.dataset.target).style.display = 'block';
+            });
+        });
+        // Aktifkan tab pertama secara default
+        document.querySelector('.quest-tab').click();
+    },
+
+    renderSanctuary() {
+        const container = document.getElementById('wanderer-page-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color text-center">
+                    <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-4">Sanctuary of Inner Peace</h3>
+                    <p class="text-slate-400">Tempat untuk merenung dan menenangkan jiwa. Fitur akan datang!</p>
+                    <i data-feather="feather" class="w-16 h-16 text-slate-600 mt-8"></i>
+                </div>
+            `;
+        }
+        feather.replace();
+    },
+    renderWorldMap() {
+        const container = document.getElementById('wanderer-page-container');
+        if (container) {
+            container.innerHTML = `
+                <div class="bg-card-bg p-8 rounded-2xl shadow-2xl border border-border-color text-center">
+                    <h3 class="text-2xl font-serif font-bold text-white tracking-wider mb-4">The World Map</h3>
+                    <p class="text-slate-400">Eksplorasi dunia Soulforge Saga. Fitur akan datang!</p>
+                    <i data-feather="map" class="w-16 h-16 text-slate-600 mt-8"></i>
+                </div>
+            `;
+        }
+        feather.replace();
+    },
+    renderSkillTree() {
+        const container = document.getElementById('skill-tree-container');
+        if (!container) return;
+
+        let html = '';
+        const attributes = ["Stamina", "Discipline", "Knowledge", "Social", "Focus"];
+        
+        attributes.forEach(attrName => {
+            const attribute = this.currentUser.attributes.find(a => a.name === attrName);
+            const skillData = this.SKILL_TREE_DATA[attrName];
+            
+            html += `
+                <div class="skill-tree-column bg-card-bg p-6 rounded-2xl shadow-lg border border-border-color">
+                    <h4 class="text-xl font-serif font-bold text-white mb-4 text-center">${attrName}</h4>
+                    <p class="text-slate-400 text-sm mb-4 text-center">Level Saat Ini: <span class="font-bold text-indigo-400">${attribute.value}</span></p>
+                    <div class="space-y-4">
+            `;
+
+            if (skillData) {
+                // Urutkan level skill
+                const levels = Object.keys(skillData).map(Number).sort((a, b) => a - b);
+                
+                levels.forEach(level => {
+                    const imprint = skillData[level];
+                    const isUnlocked = this.currentUser.unlockedImprints.includes(imprint.id);
+                    const canUnlock = attribute.value >= level && !isUnlocked; // Bisa dibuka jika level cukup dan belum dimiliki
+                    const isFuture = attribute.value < level;
+
+                    html += `
+                        <div class="skill-node p-4 rounded-lg border ${isUnlocked ? 'border-emerald-500 bg-emerald-900/20' : isFuture ? 'border-slate-700 bg-slate-900/10' : 'border-indigo-600 bg-indigo-900/20'} ${isFuture ? 'opacity-50' : ''}">
+                            <div class="flex items-center mb-2">
+                                <i data-feather="${imprint.icon}" class="w-6 h-6 mr-3 ${isUnlocked ? 'text-emerald-400' : 'text-slate-500'}"></i>
+                                <h5 class="text-lg font-semibold ${isUnlocked ? 'text-white' : 'text-slate-300'}">${imprint.name} (Level ${level})</h5>
+                            </div>
+                            <p class="text-slate-400 text-sm">${imprint.description}</p>
+                            ${isUnlocked ? `<span class="mt-2 block text-emerald-400 text-xs font-bold">UNLOCKED</span>` : ''}
+                            ${isFuture ? `<span class="mt-2 block text-slate-500 text-xs font-bold">LEVEL ${level} REQUIRED</span>` : ''}
+                            ${canUnlock ? `<button class="unlock-imprint-btn mt-3 w-full px-4 py-2 bg-indigo-600 text-white rounded-lg hover:bg-indigo-500" data-imprint-id="${imprint.id}">ACTIVATE</button>` : ''}
+                        </div>
+                    `;
+                });
+            } else {
+                html += `<p class="text-slate-500 text-center">Belum ada imprin untuk atribut ini.</p>`;
+            }
+
+            html += `
+                    </div>
+                </div>
+            `;
+        });
+        
+        UIManager.render(container, html);
+        feather.replace();
+
+        // Event listeners untuk tombol ACTIVATE (jika ada)
+        document.querySelectorAll('.unlock-imprint-btn').forEach(button => {
+            button.addEventListener('click', async (e) => {
+                const imprintId = e.target.dataset.imprintId;
+                const imprint = Object.values(this.SKILL_TREE_DATA).flatMap(Object.values).find(i => i.id === imprintId);
+                
+                if (imprint && !this.currentUser.unlockedImprints.includes(imprintId)) {
+                    this.currentUser.unlockedImprints.push(imprintId);
+                    await this.saveDB(true);
+                    UIManager.showNotification(`Soul Imprint Activated: ${imprint.name}!`, 'zap', 'bg-gradient-to-r from-purple-400 to-pink-400');
+                    this.renderSkillTree(); // Render ulang skill tree untuk update status
+                }
+            });
+        });
     },
 
     definePageTemplates() {
@@ -934,3 +1355,130 @@ const App = {
 };
 
 App.init();
+
+// Menambahkan event listener untuk import/export di halaman Wanderer
+document.addEventListener('DOMContentLoaded', () => {
+    // Pastikan tombol-tombol ini hanya ada di halaman wanderer.html
+    const exportButton = document.getElementById('export-button');
+    const importInput = document.getElementById('import-input');
+
+    if (exportButton) {
+        exportButton.onclick = () => App.exportSaga();
+    }
+    if (importInput) {
+        importInput.onchange = (e) => {
+            if (e.target.files.length > 0) {
+                App.importSaga(e.target.files[0]);
+            }
+        };
+    }
+    // Overlay container untuk modal
+    const overlayContainer = document.createElement('div');
+    overlayContainer.id = 'overlay-container';
+    document.body.appendChild(overlayContainer);
+
+    // Notification banner
+    const notificationBanner = document.createElement('div');
+    notificationBanner.id = 'notification-banner';
+    notificationBanner.className = `fixed top-0 left-0 right-0 p-4 text-slate-900 font-bold text-center z-50 shadow-lg opacity-0`;
+    notificationBanner.innerHTML = `
+        <div class="flex items-center justify-center">
+            <i id="notification-icon" data-feather="award" class="w-6 h-6 mr-3"></i>
+            <span id="notification-text"></span>
+        </div>
+    `;
+    document.body.appendChild(notificationBanner);
+    feather.replace(); // Pastikan ikon untuk notifikasi dirender
+
+    // Background Canvas untuk index.html
+    const backgroundCanvas = document.getElementById('background-canvas');
+    if (backgroundCanvas) {
+        const ctx = backgroundCanvas.getContext('2d');
+        let width = window.innerWidth;
+        let height = window.innerHeight;
+        backgroundCanvas.width = width;
+        backgroundCanvas.height = height;
+
+        window.addEventListener('resize', () => {
+            width = window.innerWidth;
+            height = window.innerHeight;
+            backgroundCanvas.width = width;
+            backgroundCanvas.height = height;
+        });
+
+        const particles = [];
+        const numParticles = 100;
+
+        function Particle(x, y, radius, color, velocity) {
+            this.x = x;
+            this.y = y;
+            this.radius = radius;
+            this.color = color;
+            this.velocity = velocity;
+
+            this.draw = function() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.radius, 0, Math.PI * 2, false);
+                ctx.fillStyle = this.color;
+                ctx.fill();
+            };
+
+            this.update = function() {
+                this.x += this.velocity.x;
+                this.y += this.velocity.y;
+
+                if (this.x - this.radius < 0 || this.x + this.radius > width) {
+                    this.velocity.x = -this.velocity.x;
+                }
+                if (this.y - this.radius < 0 || this.y + this.radius > height) {
+                    this.velocity.y = -this.velocity.y;
+                }
+                this.draw();
+            };
+        }
+
+        function initParticles() {
+            for (let i = 0; i < numParticles; i++) {
+                const radius = Math.random() * 2 + 1;
+                const x = Math.random() * (width - radius * 2) + radius;
+                const y = Math.random() * (height - radius * 2) + radius;
+                const color = `rgba(129, 140, 248, ${Math.random() * 0.5 + 0.1})`; // Indigo-400
+                const velocity = {
+                    x: (Math.random() - 0.5) * 0.5,
+                    y: (Math.random() - 0.5) * 0.5
+                };
+                particles.push(new Particle(x, y, radius, color, velocity));
+            }
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            ctx.clearRect(0, 0, width, height);
+
+            for (let i = 0; i < particles.length; i++) {
+                particles[i].update();
+            }
+
+            // Draw lines between nearby particles
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const distance = Math.sqrt(dx * dx + dy * dy);
+
+                    if (distance < 100) {
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.lineWidth = 0.5;
+                        ctx.strokeStyle = `rgba(129, 140, 248, ${1 - (distance / 100)})`;
+                        ctx.stroke();
+                    }
+                }
+            }
+        }
+
+        initParticles();
+        animate();
+    }
+});
